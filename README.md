@@ -1,98 +1,91 @@
 # Robot Line Follower — ESP32 + 2 Sensor Garis TCRT5000 + Driver L298N
 
-Robot yang mengikuti garis hitam di lantai putih secara otomatis, tanpa disentuh sama sekali. Dua sensor garis TCRT5000 menjadi "mata" robot: ESP32 membaca keduanya tiap 10 milidetik, lalu mengatur kecepatan dua motor DC lewat driver L298N dengan PWM. Begitu garis menikung, robot langsung belok sendiri.
+Robot kecil yang mengikuti garis hitam di lantai putih tanpa disentuh
+sama sekali. Dua sensor garis TCRT5000 di depan menjadi "mata" robot:
+begitu garis menikung, ESP32 langsung membelokkan robot mengikuti
+garisnya. Cocok untuk belajar sensor, PWM, dan logika kontrol sederhana.
 
-Kode dari YouTube Short **"Robotmu Nabrak Tembok Terus? Bikin Dia Ikut Garis Sendiri! | ESP32"** — link menyusul setelah upload.
+Video penjelasan (60 detik):
+link menyusul setelah upload
 
 ## Komponen
 
-| Komponen | Keterangan |
+| Bagian | Keterangan |
 |---|---|
-| ESP32 DevKit | Board utama |
-| Sensor garis TCRT5000 (2x) | "Mata" robot, kiri dan kanan |
-| Driver motor L298N | Mengatur arah + kecepatan motor |
-| Motor DC 3–6 V (2x) | Roda kiri dan roda kanan |
-| Baterai 7,4 V (2x 18650 seri) | Catu motor + ESP32 |
-| Chassis robot + 2 roda | Rangka robot |
-
-## Skema rangkaian
-
-![Skema rangkaian](schematic.png)
+| ESP32 DevKit | Otak robot |
+| Sensor garis TCRT5000 (2x) | Baca garis hitam, output digital HIGH di atas garis |
+| Driver motor L298N | Atur arah + kecepatan 2 motor DC (PWM) |
+| Motor DC + roda (2x) | Penggerak kiri dan kanan |
+| Baterai 7,4 V (2x 18650 seri) | Catu daya motor lewat L298N |
+| LED bawaan GPIO2 | Menyala saat robot sedang mengikuti garis |
 
 ## Wiring
 
-| Komponen | Pin ESP32 / L298N |
+| Dari | Ke |
 |---|---|
-| Sensor kiri OUT | GPIO32 |
-| Sensor kanan OUT | GPIO33 |
-| Sensor VCC / GND | 3V3 / GND |
-| L298N ENA (PWM motor kiri) | GPIO25 |
-| L298N IN1 / IN2 (arah motor kiri) | GPIO26 / GPIO27 |
-| L298N IN3 / IN4 (arah motor kanan) | GPIO18 / GPIO19 |
-| L298N ENB (PWM motor kanan) | GPIO13 |
+| Sensor kiri OUT | ESP32 GPIO32 |
+| Sensor kanan OUT | ESP32 GPIO33 |
+| Sensor VCC (keduanya) | ESP32 3V3 |
+| L298N ENA | ESP32 GPIO25 (PWM motor kiri) |
+| L298N IN1 | ESP32 GPIO26 |
+| L298N IN2 | ESP32 GPIO27 |
+| L298N IN3 | ESP32 GPIO18 |
+| L298N IN4 | ESP32 GPIO19 |
+| L298N ENB | ESP32 GPIO13 (PWM motor kanan) |
+| L298N OUT1 / OUT2 | Motor DC kiri (+ / -) |
+| L298N OUT3 / OUT4 | Motor DC kanan (+ / -) |
 | L298N 12V | Baterai 7,4 V (+) |
-| L298N 5V | VIN ESP32 |
-| L298N GND | GND (disatukan dengan GND ESP32) |
-| L298N OUT1 / OUT2 | Motor kiri (+ / −) |
-| L298N OUT3 / OUT4 | Motor kanan (+ / −) |
-| LED bawaan | GPIO2 (menyala saat robot mengikuti garis) |
+| L298N 5V | ESP32 VIN |
+| Semua GND | Digabung (sensor, ESP32, L298N, baterai -) |
 
-> ⚠️ **Penting:** baterai 7,4 V HANYA ke pin 12V L298N — jangan ke VIN ESP32. ESP32 dicatu dari pin 5V L298N lewat VIN.
+Skema lengkap: [schematic.png](schematic.png)
+
+Perhatian daya: baterai 7,4 V HANYA masuk ke pin 12V L298N.
+Jangan hubungkan baterai langsung ke VIN ESP32 — ESP32 dicatu dari
+regulator 5V L298N lewat VIN.
 
 ## Cara kerja
 
-Sensor TCRT5000 mengeluarkan HIGH saat di atas garis hitam, LOW saat di atas lantai putih. Kalau modulmu terbalik (LOW di atas garis), ubah nilai `SENSOR_GARIS_AKTIF` di `RobotLineFollower.ino` menjadi `LOW`.
+Dua sensor membaca garis tiap 10 milidetik. Kombinasi bacaannya
+menentukan gerakan robot:
 
-| Sensor kiri | Sensor kanan | Robot |
+| Sensor kiri | Sensor kanan | Gerakan |
 |---|---|---|
-| Di garis | Di garis | Maju lurus (PWM 180) |
-| Di garis | Di luar garis | Belok kiri (kiri 80, kanan 200) |
-| Di luar garis | Di garis | Belok kanan (kiri 200, kanan 80) |
-| Di luar garis | Di luar garis | Berhenti (garis hilang) |
+| HIGH (di garis) | HIGH (di garis) | Maju lurus, kedua motor kecepatan 180 |
+| HIGH (di garis) | LOW | Belok kiri — motor kiri pelan (110), kanan tetap cepat |
+| LOW | HIGH (di garis) | Belok kanan — motor kanan pelan (110), kiri tetap cepat |
+| LOW | LOW (garis hilang) | Putar di tempat ke arah belokan terakhir sampai garis ketemu lagi |
 
-```cpp
-kiriDiGaris  = (digitalRead(PIN_SENSOR_KIRI)  == SENSOR_GARIS_AKTIF);
-kananDiGaris = (digitalRead(PIN_SENSOR_KANAN) == SENSOR_GARIS_AKTIF);
-if (kiriDiGaris && kananDiGaris)      majuLurus();
-else if (kiriDiGaris)                 belokKiri();
-else if (kananDiGaris)                belokKanan();
-else                                  berhenti();
-```
+Kecepatan motor diatur dengan PWM 5 kHz 8-bit lewat pin ENA/ENB
+L298N. LED bawaan GPIO2 menyala selama robot mengikuti garis dan
+padam saat robot sedang mencari garis.
 
-## Konfigurasi
+## Konfigurasi (di awal sketch)
 
-Ubah di atas file `RobotLineFollower/RobotLineFollower.ino`:
+- `INTERVAL_BACA_MS` (10) — seberapa sering sensor dibaca.
+- `FREKUENSI_PWM_HZ` (5000) dan `RESOLUSI_PWM_BIT` (8) — sinyal PWM motor.
+- `KECEPATAN_MAJU` (180) — kecepatan lurus, 0–255.
+- `KECEPATAN_BELOK` (110) — kecepatan motor sisi dalam saat belok.
+- `KECEPATAN_PUTAR` (150) — kecepatan putar saat mencari garis.
 
-| Konstanta | Nilai | Keterangan |
-|---|---|---|
-| `KECEPATAN_LURUS` | 180 | PWM 0–255 saat maju lurus |
-| `KECEPATAN_BELOK_LUAR` | 200 | PWM roda luar saat belok |
-| `KECEPATAN_BELOK_DALAM` | 80 | PWM roda dalam saat belok |
-| `INTERVAL_BACA_MS` | 10 | Baca sensor tiap 10 ms |
-| `FREKUENSI_PWM_HZ` | 5000 | Frekuensi PWM motor |
-| `RESOLUSI_PWM_BIT` | 8 | Resolusi PWM 8 bit (0–255) |
-| `SENSOR_GARIS_AKTIF` | HIGH | HIGH = sensor di atas garis hitam |
-
-Kalibrasi sensor: putar trimpot di modul TCRT5000 sampai LED indikatornya menyala tepat saat sensor di atas garis hitam, dan mati saat di atas lantai putih. Jarak ideal sensor ke lantai sekitar 1 cm.
+Kalau robot terlalu liar di tikungan, turunkan `KECEPATAN_MAJU`;
+kalau robot lambat merespons, turunkan `INTERVAL_BACA_MS`.
 
 ## Library yang dibutuhkan
 
-Tidak ada — hanya GPIO dan PWM bawaan ESP32, tanpa library eksternal.
-
-Board yang dipakai: **esp32 by Espressif Systems** (install lewat Boards Manager, pilih board "ESP32 Dev Module").
+Tidak ada — sketch ini hanya memakai fungsi bawaan ESP32 core
+(`digitalRead`, `ledcAttach`, `ledcWrite`). Tidak perlu install
+library tambahan.
 
 ## Compile
 
-```bash
-arduino-cli compile --fqbn esp32:esp32:esp32 RobotLineFollower/RobotLineFollower.ino
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32 RobotLineFollower
 ```
 
-Terverifikasi 23 Nov 2026 (arduino-cli 1.6.0, ESP32 core 4.0.0): sketch 300.319 byte (22% flash), RAM 23.396 byte (7%).
-
-## Video
-
-- Short 60 detik: ide → konsep → desain → implementasi (link menyusul setelah upload).
+Terverifikasi 23 Nov 2026: sketch 300.491 byte (22% flash),
+RAM 23.396 byte (7%), ESP32 core 4.0.0.
 
 ## Lisensi
 
-MIT — bebas dipakai, diubah, dan dibagikan, cantumkan sumber.
+MIT — lihat [LICENSE](LICENSE).
