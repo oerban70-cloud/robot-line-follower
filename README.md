@@ -6,7 +6,7 @@ begitu garis menikung, ESP32 langsung membelokkan robot mengikuti
 garisnya. Cocok untuk belajar sensor, PWM, dan logika kontrol sederhana.
 
 Video penjelasan (60 detik):
-link menyusul setelah upload
+https://youtube.com/shorts/RkOnP2taV5A
 
 ## Komponen
 
